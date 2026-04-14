@@ -76,6 +76,19 @@ typedef enum
 	Detected = 2
 } type_transition_state;
 
+
+typedef struct
+{
+	type_bool_state atu;
+	type_bool_state ant;
+
+	type_transition_state transition_state;
+
+	type_ST timer_db;
+	uint32_t debounce_time;
+
+} type_button;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -96,9 +109,13 @@ type_ST ST_Timer1;
 type_PWM PWM1;
 type_on_off LED_B_state;
 
-type_bool_state BOT_B_atu, BOT_B_ant;
-type_ST ST_Timer_db_BOT_B;
-type_transition_state BOT_B_Rising_Transition;
+type_button BOT_B;
+
+
+type_transition_state event;
+
+
+type_bool_state leitura_botao;
 
 /* USER CODE END PV */
 
@@ -115,6 +132,10 @@ void PWM_Init(type_PWM *pPWM, GPIO_TypeDef* GPIO_Port, uint16_t GPIO_Pin,
               uint32_t Period, float Duty); 
 void PWM_Update(type_PWM *pPWM, uint32_t Period, 
                 float Duty, type_bool_state shadow);
+
+type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura);
+
+void Button_Init(type_button *btn, uint32_t debounce_time);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -162,10 +183,7 @@ int main(void)
 	
 	int i = 0;
 	
-	BOT_B_atu = Active;
-	BOT_B_ant = Active;
-	
-	BOT_B_Rising_Transition = Detecting;
+	Button_Init(&BOT_B, 200);
 	
 	/* USER CODE END 2 */
 
@@ -178,8 +196,6 @@ int main(void)
 
 		/* USER CODE BEGIN 3 */
 		
-		if (BOT_B_Rising_Transition == Detected)
-			HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin);
 		
 		if (ST(&ST_Timer1)) {
 			ST_Lapse(&ST_Timer1);
@@ -201,8 +217,8 @@ int main(void)
 		}
 	    
 		
-		BOT_B_atu = (type_bool_state)HAL_GPIO_ReadPin(BOT_B_GPIO_Port, BOT_B_Pin);
-		if (BOT_B_atu) 
+		leitura_botao = (type_bool_state)HAL_GPIO_ReadPin(BOT_B_GPIO_Port, BOT_B_Pin);
+		if (leitura_botao)
 		{
 			if (LED_B_state == off) {
 				HAL_GPIO_WritePin(LED_B_GPIO_Port, LED_B_Pin, GPIO_PIN_SET);
@@ -218,37 +234,11 @@ int main(void)
 			
 		}
 		
-		if (BOT_B_Rising_Transition == Detecting)
+		event = Button_Debounce(&BOT_B, leitura_botao);
+
+		if (event == Detected)
 		{
-			if (BOT_B_atu == Active)
-			{
-				if (BOT_B_ant == Inactive)
-				{
-					// Saboooor transição
-					ST_Init(&ST_Timer_db_BOT_B, 200);
-					BOT_B_Rising_Transition = Possible_transition;
-				}			
-			}
-			BOT_B_ant = BOT_B_atu;
-		} 
-		else if (BOT_B_Rising_Transition == Possible_transition)
-		{
-			if (ST(&ST_Timer_db_BOT_B))
-			{
-				if (BOT_B_atu == Active)
-				{
-					BOT_B_Rising_Transition = Detected;
-				}
-				else
-				{
-					BOT_B_Rising_Transition = Detecting;
-				}
-			}
-			
-		}
-		else // Detected
-		{
-			BOT_B_Rising_Transition = Detecting;
+			HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin);
 		}
 		
 		
@@ -415,6 +405,61 @@ void PWM_Update(type_PWM *pPWM, uint32_t Period,
 		pPWM->t_act = pPWM->T * pPWM->duty_cycle;
 		pPWM->t_ina = pPWM->T - pPWM->t_act;
 	}
+}
+
+
+void Button_Init(type_button *btn, uint32_t debounce_time)
+{
+	btn->atu = Active;
+	btn->ant = Active;
+
+	btn->transition_state = Detecting;
+
+	btn->debounce_time = debounce_time;
+
+	ST_Init(&btn->timer_db, debounce_time);
+}
+
+
+type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura)
+{
+	btn->atu = leitura;
+
+	switch (btn->transition_state)
+	{
+	case Detecting:
+		if (btn->atu == Active && btn->ant == Inactive)
+		{
+			ST_Init(&btn->timer_db, btn->debounce_time);
+			btn->transition_state = Possible_transition;
+		}
+		btn->ant = btn->atu;
+		break;
+
+	case Possible_transition:
+		if (ST(&btn->timer_db))
+		{
+			if (btn->atu == Active)
+			{
+				btn->transition_state = Detected;
+			}
+			else
+			{
+				btn->transition_state = Detecting;
+			}
+		}
+		break;
+
+	case Detected:
+		btn->transition_state = Detecting;
+		break;
+
+	default:
+		btn->transition_state = Detecting;
+		break;
+	}
+
+	return btn->transition_state;
 }
 
 /* USER CODE END 4 */
