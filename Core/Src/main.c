@@ -183,7 +183,7 @@ int main(void)
 	
 	int i = 0;
 	
-	Button_Init(&BOT_B, 200);
+	Button_Init(&BOT_B, 50);
 	
 	/* USER CODE END 2 */
 
