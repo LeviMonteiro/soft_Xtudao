@@ -76,6 +76,30 @@ typedef enum
 	Detected = 2
 } type_transition_state;
 
+typedef struct 
+{
+	type_bool_state atu;
+	
+	type_bool_state ant;
+	
+	type_transition_state state;
+	
+	type_ST timer_db;
+	
+	int time_debounce;
+	
+	GPIO_TypeDef *Port;
+	
+	uint16_t Pin;
+	
+}type_rise_transition;
+
+typedef enum
+{
+	RISE_EDGE = 0,
+	FALL_EDGE = 1
+} type_edge;
+
 
 typedef struct
 {
@@ -111,6 +135,8 @@ type_on_off LED_B_state;
 
 type_button BOT_B;
 
+type_rise_transition RT_B;
+
 
 type_transition_state event;
 
@@ -136,6 +162,9 @@ void PWM_Update(type_PWM *pPWM, uint32_t Period,
 type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura);
 
 void Button_Init(type_button *btn, uint32_t debounce_time);
+
+void Rise_Init(type_rise_transition *rt, uint32_t debounce_time);
+type_bool Edge_Detect(type_rise_transition *rt, type_bool_state leitura, type_edge edge);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -184,6 +213,8 @@ int main(void)
 	int i = 0;
 	
 	Button_Init(&BOT_B, 50);
+	
+	Rise_Init(&RT_B, 50);
 	
 	/* USER CODE END 2 */
 
@@ -234,9 +265,7 @@ int main(void)
 			
 		}
 		
-		event = Button_Debounce(&BOT_B, leitura_botao);
-
-		if (event == Detected)
+		if (Edge_Detect(&RT_B, leitura_botao, RISE_EDGE))
 		{
 			HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin);
 		}
@@ -428,7 +457,7 @@ type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura)
 	switch (btn->transition_state)
 	{
 	case Detecting:
-		if (btn->atu == Active && btn->ant == Inactive)
+		if (btn->atu != btn->ant)
 		{
 			ST_Init(&btn->timer_db, btn->debounce_time);
 			btn->transition_state = Possible_transition;
@@ -439,14 +468,7 @@ type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura)
 	case Possible_transition:
 		if (ST(&btn->timer_db))
 		{
-			if (btn->atu == Active)
-			{
-				btn->transition_state = Detected;
-			}
-			else
-			{
-				btn->transition_state = Detecting;
-			}
+			btn->transition_state = Detected;
 		}
 		break;
 
@@ -460,6 +482,49 @@ type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura)
 	}
 
 	return btn->transition_state;
+}
+
+
+void Rise_Init(type_rise_transition *rt, uint32_t debounce_time)
+{
+	rt->atu = Inactive;
+	rt->ant = Inactive;
+	rt->state = Detecting;
+	rt->time_debounce = debounce_time;
+	ST_Init(&rt->timer_db, debounce_time);
+}
+
+type_bool Edge_Detect(type_rise_transition *rt, type_bool_state leitura, type_edge edge)
+{
+	type_button btn_aux;
+
+	// Copia estados
+	btn_aux.atu = rt->atu;
+	btn_aux.ant = rt->ant;
+	btn_aux.transition_state = rt->state;
+	btn_aux.timer_db = rt->timer_db;
+	btn_aux.debounce_time = rt->time_debounce;
+
+	type_transition_state event = Button_Debounce(&btn_aux, leitura);
+
+	rt->atu = btn_aux.atu;
+	rt->ant = btn_aux.ant;
+	rt->state = btn_aux.transition_state;
+	rt->timer_db = btn_aux.timer_db;
+
+	if (event == Detected)
+	{
+		if (edge == RISE_EDGE && rt->atu == Active)
+		{
+			return True;
+		}
+		else if (edge == FALL_EDGE && rt->atu == Inactive)
+		{
+			return True;
+		}
+	}
+
+	return False;
 }
 
 /* USER CODE END 4 */
